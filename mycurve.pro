@@ -4,10 +4,13 @@ CONFIG -= app_bundle
 CONFIG -= qt
 
 SOURCES += main.cpp \
-    ec.cpp
+    ec.cpp \
+    point.cpp
 
 HEADERS += \
-    ec.hpp
+    ec.hpp \
+    test.hpp \
+    point.hpp
 
 LIBS += -lgcrypt -lgmp
 

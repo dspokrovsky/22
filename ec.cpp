@@ -6,7 +6,7 @@
 #include <gcrypt.h>
 #include <gmp.h>
 
-#define MAX_MPI_BUF 200
+#define MAX_MPI_BUF 256
 
 using namespace std;
 
@@ -48,15 +48,17 @@ void Point::print()
 // -----------------------------------------------------
 // Методы эллиптической кривой
 
-EllipticCurve::EllipticCurve()
+
+
+EllipticCurve::EllipticCurve(MontgometyCurveParameters ec_param)
 {
-    cout << "Эллиптическая кривая" << endl;
+    /*cout << "Эллиптическая кривая" << endl;
     cout << "b*y^2 = x^3 + ax^2 + x (mod p)" << endl;
-    cout << "Параметры кривой:\n" << endl;
-    p = gcry_mpi_new(0);
-    a = gcry_mpi_new(0);
-    b = gcry_mpi_new(0);
-    q = gcry_mpi_new(0);
+    cout << "Параметры кривой:\n" << endl;*/
+    p = gcry_mpi_new(256);
+    a = gcry_mpi_new(256);
+    b = gcry_mpi_new(256);
+    q = gcry_mpi_new(256);
     if (gcry_mpi_scan(&p, GCRYMPI_FMT_HEX, ec_param.p, 0, NULL) != 0)
         cout << "Ошибка записи p.\n";
     if (gcry_mpi_scan(&a, GCRYMPI_FMT_HEX, ec_param.a, 0, NULL) != 0)
@@ -65,20 +67,6 @@ EllipticCurve::EllipticCurve()
         cout << "Ошибка записи b.\n";
     if (gcry_mpi_scan(&q, GCRYMPI_FMT_HEX, ec_param.q, 0, NULL) != 0)
         cout << "Ошибка записи q.\n";
-/*  //curve25519
-    gcry_mpi_t buf = gcry_mpi_new(0);
-    gcry_mpi_set_ui(buf, 2);
-    gcry_mpi_t buf1 = gcry_mpi_new(0);
-    gcry_mpi_set_ui(buf1, 1);
-    gcry_mpi_t buf2 = gcry_mpi_new(0);
-    gcry_mpi_set_ui(buf2, 255);
-    //gcry_mpi_pow(p, buf, buf2);
-    gcry_mpi_set_ui(buf, 19);
-    gcry_mpi_mul_2exp(p, buf1, 255);
-    gcry_mpi_sub(p, p, buf);
-    gcry_mpi_set_ui(b, 1);
-    gcry_mpi_set_ui(a,  486662);
-*/
     //---
     cout << "p = ";
     show_mpi(p);
@@ -112,7 +100,7 @@ EllipticCurve::~EllipticCurve()
     gcry_mpi_release(k);
 }
 
-gcry_mpi_t EllipticCurve::GetF(gcry_mpi_t x)
+gcry_mpi_t EllipticCurve::calculateRightPart(gcry_mpi_t x)
 {
 
     gcry_mpi_t fx = gcry_mpi_new(0);
@@ -124,16 +112,11 @@ gcry_mpi_t EllipticCurve::GetF(gcry_mpi_t x)
     gcry_mpi_powm(buf, x, buf, p);
     gcry_mpi_addm(fx, buf, fx, p);
     gcry_mpi_addm(fx, fx, x, p);
-    //gcry_mpi_t invers = gcry_mpi_new(0);
-    //if (!gcry_mpi_invm(invers,b,p)) std::cout << "ATTENTION NO INVERSE ELEMENT\n";//TODO
-    //gcry_mpi_mulm(fx, invers, fx, p);
     gcry_mpi_release(buf);
-    //gcry_mpi_release(invers);
-    //show_mpi(fx);
     return fx;
 }
 
-int EllipticCurve::euler_criteria(gcry_mpi_t fx0)
+int EllipticCurve::eulerCriteria(gcry_mpi_t fx0)
 {
     gcry_mpi_t exp = gcry_mpi_new(0);
     gcry_mpi_t div = gcry_mpi_new(0);
@@ -149,14 +132,14 @@ int EllipticCurve::euler_criteria(gcry_mpi_t fx0)
     return cmp;
 }
 
-gcry_mpi_t EllipticCurve::compY(gcry_mpi_t x0)
+gcry_mpi_t EllipticCurve::calculateY(gcry_mpi_t x0)
 {
-    gcry_mpi_t fx0 = GetF(x0);
+    gcry_mpi_t fx0 = calculateRightPart(x0);
     gcry_mpi_t y0 = gcry_mpi_new(0);
     gcry_mpi_t invers = gcry_mpi_new(0);
-    if (!gcry_mpi_invm(invers,b,p)) std::cout << "ATTENTION NO INVERSE ELEMENT\n";//TODO
+    if (!gcry_mpi_invm(invers,b,p)) std::cout << "ATTENTION NO INVERSE ELEMENT compY\n";//TODO
     gcry_mpi_mulm(fx0, invers, fx0, p);
-    if (euler_criteria(fx0)==0)
+    if (eulerCriteria(fx0)==0)
     {
         cout << "f(x) - квадратичный вычет в р.\n";
         gcry_mpi_t exp = gcry_mpi_new(0);
@@ -176,25 +159,26 @@ gcry_mpi_t EllipticCurve::compY(gcry_mpi_t x0)
     return y0;
 }
 
-int EllipticCurve::afBelong(Point &point)
+int EllipticCurve::belongingAffine(Point &point)
 {
     // Подстановка в уравнение кривой координат точки point и проверка на принадлежность
     point.print();
-    gcry_mpi_t left = gcry_mpi_new(0);
-    gcry_mpi_t exp = gcry_mpi_new(0);
+    gcry_mpi_t left = gcry_mpi_new(256);
+    gcry_mpi_t exp = gcry_mpi_new(256);
     gcry_mpi_set_ui(exp, 2);
     gcry_mpi_powm(left, point.y, exp, p);
     gcry_mpi_mulm(left, left, b, p);
-    show_mpi(left);
-    gcry_mpi_t right = GetF(point.x);
-    show_mpi(right);
+    //show_mpi(left);
+    gcry_mpi_t right = calculateRightPart(point.x);
+    //show_mpi(right);
+    //std::cout << '\n';
     int cmp = gcry_mpi_cmp(left, right);
     gcry_mpi_release(left);
     gcry_mpi_release(right);
     return cmp;
 }
 
-int EllipticCurve::build_point(Point &pk,int mode)
+int EllipticCurve::buildPoint(Point &pk,int mode)
 {
     switch(mode)
     {
@@ -218,9 +202,9 @@ int EllipticCurve::build_point(Point &pk,int mode)
     }
     case 3:
     {
-        cout << "Будет сгенерирована случайная точка.\n";
+        cout << "Будет сгенерирована точка 9.\n";
         gcry_mpi_set_ui(P.x, 9);
-        P.y = compY(P.x);
+        P.y = calculateY(P.x);
         gcry_mpi_set_ui(P.z, 1);
         P.print();
         cout << endl;
@@ -228,11 +212,12 @@ int EllipticCurve::build_point(Point &pk,int mode)
     }
     case 1:
     {
-        cout << "Будет сгенерирована случайная точка.\n";
-        gcry_mpi_randomize(P.x, 64, GCRY_WEAK_RANDOM);
-        P.y = compY(P.x);
+        //cout << "Будет сгенерирована случайная точка.\n";
+        gcry_mpi_randomize(P.x, 256, GCRY_WEAK_RANDOM);
+        gcry_mpi_mod(P.x,P.x,p);
+        P.y = calculateY(P.x);
         gcry_mpi_set_ui(P.z, 1);
-        P.print();
+        //P.print();
         cout << endl;
         break;
     }
@@ -246,7 +231,7 @@ int EllipticCurve::build_point(Point &pk,int mode)
     pk.x= P.x;
     pk.y= P.y;
     pk.z= P.z;
-    if (afBelong(P) == 0)
+    if (belongingAffine(P) == 0)
     {
         cout << "--Точка P(x,y) принадлежит кривой.\n";
         cout << endl;
@@ -260,70 +245,22 @@ int EllipticCurve::build_point(Point &pk,int mode)
     }
 }
 
-int EllipticCurve::prBelong(const Point &point)
-{
-    // point в проективных координатах
-    // Подстановка в уравнение
-    // b*Y^2*Z = X^3 + a*X*Z^2 + X*Z^2 (p)
-
-    // Левая часть
-    gcry_mpi_t left = gcry_mpi_new(0);
-    gcry_mpi_t exp = gcry_mpi_new(0);
-    gcry_mpi_set_ui(exp, 2);
-    gcry_mpi_powm(left, point.y, exp, p);
-    gcry_mpi_mulm(left, left, point.z, p);
-    gcry_mpi_mulm(left, left, b, p);
-
-    // Правая часть
-    gcry_mpi_t right = gcry_mpi_new(0);
-    gcry_mpi_t first = gcry_mpi_new(0);
-    gcry_mpi_t second = gcry_mpi_new(0);
-    gcry_mpi_t third = gcry_mpi_new(0);
-    gcry_mpi_powm(second, point.z, exp, p);
-    gcry_mpi_mulm(second, second, point.x, p);
-    gcry_mpi_mulm(second, second, a, p);
-
-    gcry_mpi_set_ui(exp, 3);
-    gcry_mpi_powm(first, point.x, exp, p);
-
-    gcry_mpi_set_ui(exp, 2);
-    gcry_mpi_powm(third, point.z, exp, p);
-    gcry_mpi_mulm(third, third, point.x, p);
-    gcry_mpi_addm(right, first, second, p);
-    gcry_mpi_addm(right, right, third, p);
-
-    int cmp = gcry_mpi_cmp(left, right);
-    gcry_mpi_release(left);
-    gcry_mpi_release(right);
-    gcry_mpi_release(exp);
-    gcry_mpi_release(first);
-    gcry_mpi_release(second);
-    gcry_mpi_release(third);
-    return cmp;
-}
-
-void EllipticCurve::doubling_point(Point &dp, const Point &p1)
+void EllipticCurve::doublePoint(Point &dp, const Point &p1)
 {
     gcry_mpi_t buf1 = gcry_mpi_new(0);
     gcry_mpi_t buf2 = gcry_mpi_new(0);
     gcry_mpi_t buf3 = gcry_mpi_new(0);
     gcry_mpi_t two = gcry_mpi_new(0);;
     gcry_mpi_set_ui(two,2);
-    //const char *qq = "2";
-    //gcry_mpi_scan(&two, GCRYMPI_FMT_HEX, qq, 0, NULL);
     gcry_mpi_t three = gcry_mpi_new(0);
     gcry_mpi_set_ui(three,3);
-    //const char *qq3 = "3";
-    //gcry_mpi_scan(&three, GCRYMPI_FMT_HEX, qq3, 0, NULL);
-    gcry_mpi_t one = gcry_mpi_new(0);
-    //const char *qq1 = "1";
-    //gcry_mpi_scan(&one, GCRYMPI_FMT_HEX, qq1, 0, NULL);
+    gcry_mpi_t one = gcry_mpi_new(0);    
     gcry_mpi_set_ui(one,1);
     //start
     gcry_mpi_mulm(buf1, two, b,p);
     gcry_mpi_mulm(buf1, buf1, p1.y,p);
     gcry_mpi_powm(buf1, buf1, two,p);
-    if (!gcry_mpi_invm(buf1,buf1,p)) std::cout << "ATTENTION NO INVERSE ELEMENT\n";//TODO
+    if (!gcry_mpi_invm(buf1,buf1,p)) std::cout << "ATTENTION NO INVERSE ELEMENT dp\n";//TODO
     //buf1-save
     gcry_mpi_powm(buf2, p1.x, two,p);       //x1^2
     gcry_mpi_mulm(buf2, buf2, three,p);         //3*x1^2
@@ -342,7 +279,7 @@ void EllipticCurve::doubling_point(Point &dp, const Point &p1)
     gcry_mpi_mulm(buf1, two, b,p);
     gcry_mpi_mulm(buf1, buf1, p1.y,p);
     gcry_mpi_powm(buf1, buf1, three,p);     //2by1
-    if (!gcry_mpi_invm(buf1,buf1,p)) std::cout << "ATTENTION NO INVERSE ELEMENT\n";//TODO
+    if (!gcry_mpi_invm(buf1,buf1,p)) std::cout << "ATTENTION NO INVERSE ELEMENT dp2\n";//TODO
                                             //TODO
     gcry_mpi_powm(buf2, p1.x, two,p);
     gcry_mpi_mulm(buf2, buf2, three,p);     //(3)
@@ -373,7 +310,7 @@ void EllipticCurve::doubling_point(Point &dp, const Point &p1)
     gcry_mpi_t bin = gcry_mpi_new(0);
     gcry_mpi_mulm(bin, b, two,p);
     gcry_mpi_mulm(bin, p1.y, bin,p);
-    if (!gcry_mpi_invm(bin,bin,p)) std::cout << "ATTENTION NO INVERSE ELEMENT\n";//TODO
+    if (!gcry_mpi_invm(bin,bin,p)) std::cout << "ATTENTION NO INVERSE ELEMENT dp3 \n";//TODO
     gcry_mpi_mulm(buf2, buf2, bin,p);
 
     gcry_mpi_subm(buf2, buf2, buf1,p);
@@ -381,7 +318,70 @@ void EllipticCurve::doubling_point(Point &dp, const Point &p1)
     dp.z = p1.z;
 }
 
-void EllipticCurve::doubling_pointP(Point &dp, const Point &p1){
+
+
+void EllipticCurve::addPointsAff(Point &p3, const Point &p1, const Point &p2)
+{
+    gcry_mpi_t y2y1 = gcry_mpi_new(0);
+    gcry_mpi_t x2x1 = gcry_mpi_new(0);
+    gcry_mpi_t two = gcry_mpi_new(0);
+    gcry_mpi_set_ui(two,2);
+    gcry_mpi_t buf = gcry_mpi_new(0);
+    gcry_mpi_subm(y2y1, p2.y, p1.y,p); //y2-y1
+    gcry_mpi_powm(y2y1,y2y1,two,p);
+    gcry_mpi_mulm(y2y1, y2y1, b,p); //b*(y2-y1)^2
+
+    gcry_mpi_subm(x2x1, p2.x, p1.x,p); //()
+    gcry_mpi_powm(x2x1,x2x1,two,p);
+    if (!gcry_mpi_invm(x2x1,x2x1,p)) std::cout<< "ATTENTION NO INVERSE ELEMENT 1\n";//TODO
+    gcry_mpi_mulm(y2y1, y2y1, x2x1,p);
+    gcry_mpi_subm(y2y1, y2y1, a,p);
+    gcry_mpi_subm(y2y1, y2y1, p1.x,p);
+    gcry_mpi_subm(p3.x, y2y1, p2.x,p);
+    //x3 done
+    gcry_mpi_subm(x2x1, p2.x, p1.x,p);
+    //gcry_mpi_mulm(buf, x2x1, x2x1,p);
+    gcry_mpi_t three = gcry_mpi_new(0);
+    gcry_mpi_set_ui(three,3);
+    gcry_mpi_powm(buf,x2x1,three,p);//(x2-x1)^3
+    if (!gcry_mpi_invm(x2x1,buf,p)) std::cout<<"ATTENTION NO INVERSE ELEMENT 2\n";//TODO
+    gcry_mpi_subm(y2y1, p2.y, p1.y,p);
+    gcry_mpi_powm(y2y1,y2y1,three,p);
+    gcry_mpi_mulm(y2y1, b, y2y1,p);
+    gcry_mpi_mulm(buf, x2x1, y2y1,p); // second b*(y2-y1)3/(x2-x1)3
+    gcry_mpi_subm(x2x1, p2.x, p1.x,p);
+    if (!gcry_mpi_invm(x2x1,x2x1,p)) std::cout <<"ATTENTION NO INVERSE ELEMENT 3\n";//TODO
+    gcry_mpi_subm(y2y1, p2.y, p1.y,p);
+    gcry_mpi_mulm(y2y1, x2x1, y2y1,p);
+    gcry_mpi_mulm(x2x1, p1.x, two,p);
+    gcry_mpi_addm(x2x1,x2x1,p2.x,p);
+    gcry_mpi_addm(x2x1,x2x1,a,p);
+    gcry_mpi_mulm(x2x1,x2x1,y2y1,p);
+    gcry_mpi_subm(y2y1, x2x1, buf,p);
+    gcry_mpi_subm(p3.y, y2y1, p1.y,p);
+    p3.z=p1.z;
+}
+
+void EllipticCurve::calculateMultiplePoint(Point &k_point, const Point &point, const gcry_mpi_t m)
+{
+    Point temp;
+    temp.x = gcry_mpi_copy(point.x);
+    temp.y = gcry_mpi_copy(point.y);
+    temp.z = gcry_mpi_copy(point.z);
+
+    gcry_mpi_set_ui(k_point.x, 0);
+    gcry_mpi_set_ui(k_point.y, 1);
+    gcry_mpi_set_ui(k_point.z, 1);
+
+    for(int i = (int)gcry_mpi_get_nbits(m)-1; i > -1;--i)
+    {
+        doublePoint(k_point, temp);
+        if (gcry_mpi_test_bit(m, i))
+            addPointsAff(k_point, k_point, temp);
+    }
+}
+
+void EllipticCurve::doubling_pointP(Point &dp, const Point p1){
     gcry_mpi_t exp =  gcry_mpi_new(0);
     /*  x2 = (x+z)^2 * (x-z)^2 */
     /*  z2 = ((x+z)^2 - (x-z)^2)*((x+z)^2 + ((A-2)/4)((x+z)^2 - (x-z)^2)) */
@@ -433,10 +433,53 @@ void EllipticCurve::doubling_pointP(Point &dp, const Point &p1){
     gcry_mpi_mulm(B,bufa,B,p);
     if (!gcry_mpi_invm(bufa,b,p)) std::cout << "ATTENTION NO INVERSE ELEMENT\n";//TODO
     gcry_mpi_mulm(B,bufa,B,p);
-    dp.y = compY(B);
+    dp.y = calculateY(B);
 
 }
 
+int EllipticCurve::prBelong(const Point &point)
+{
+    // point в проективных координатах
+    // Подстановка в уравнение
+    // b*Y^2*Z = X^3 + a*X*Z^2 + X*Z^2 (p)
+
+    // Левая часть
+    gcry_mpi_t left = gcry_mpi_new(0);
+    gcry_mpi_t exp = gcry_mpi_new(0);
+    gcry_mpi_set_ui(exp, 2);
+    gcry_mpi_powm(left, point.y, exp, p);
+    gcry_mpi_mulm(left, left, point.z, p);
+    gcry_mpi_mulm(left, left, b, p);
+
+    // Правая часть
+    gcry_mpi_t right = gcry_mpi_new(0);
+    gcry_mpi_t first = gcry_mpi_new(0);
+    gcry_mpi_t second = gcry_mpi_new(0);
+    gcry_mpi_t third = gcry_mpi_new(0);
+    gcry_mpi_powm(second, point.z, exp, p);
+    gcry_mpi_mulm(second, second, point.x, p);
+    gcry_mpi_mulm(second, second, a, p);
+
+    gcry_mpi_set_ui(exp, 3);
+    gcry_mpi_powm(first, point.x, exp, p);
+
+    gcry_mpi_set_ui(exp, 2);
+    gcry_mpi_powm(third, point.z, exp, p);
+    gcry_mpi_mulm(third, third, point.x, p);
+    gcry_mpi_addm(right, first, second, p);
+    gcry_mpi_addm(right, right, third, p);
+
+    int cmp = gcry_mpi_cmp(left, right);
+    gcry_mpi_release(left);
+    gcry_mpi_release(right);
+    gcry_mpi_release(exp);
+    gcry_mpi_release(first);
+    gcry_mpi_release(second);
+    gcry_mpi_release(third);
+    return cmp;
+}
+
+/*
 void EllipticCurve::addPointsAff(Point &p3, const Point &p1, const Point &p2)
 {
     gcry_mpi_t y2y1 = gcry_mpi_new(0);
@@ -449,7 +492,7 @@ void EllipticCurve::addPointsAff(Point &p3, const Point &p1, const Point &p2)
     gcry_mpi_subm(x2x1, p2.x, p1.x,p);
     gcry_mpi_mulm(x2x1, x2x1, x2x1,p);
     //gcry_mpi_t invers = gcry_mpi_new(0);
-    if (!gcry_mpi_invm(x2x1,x2x1,p)) std::cout << "ATTENTION NO INVERSE ELEMENT\n";//TODO
+    if (!gcry_mpi_invm(x2x1,x2x1,p)) std::cout << "ATTENTION NO INVERSE ELEMENT add1\n";//TODO
     gcry_mpi_mulm(y2y1, y2y1, x2x1,p);
     gcry_mpi_subm(y2y1, y2y1, a,p);
     gcry_mpi_subm(y2y1, y2y1, p1.x,p);
@@ -482,38 +525,85 @@ void EllipticCurve::addPointsAff(Point &p3, const Point &p1, const Point &p2)
     gcry_mpi_subm(y2y1, y2y1, buf,p);
     gcry_mpi_subm(p3.y, y2y1, p1.y,p);
 
-}
+}*/
 
-void EllipticCurve::comp_mult_point(Point &k_point, const Point &point, const gcry_mpi_t m)
+/*
+void EllipticCurve::comp_mult_point(Point &kp, const Point &p, const gcry_mpi_t m)
 {
-    Point temp, temp1;
-    temp.x = gcry_mpi_copy(point.x);
-    temp.y = gcry_mpi_copy(point.y);
-    temp.z = gcry_mpi_copy(point.z);
+    //calculate P.^-1
 
-    gcry_mpi_set_ui(k_point.x, 0);
-    gcry_mpi_set_ui(k_point.y, 1);
-    gcry_mpi_set_ui(k_point.z, 1);
+    gcry_mpi_t invers = gcry_mpi_new(0);
+    gcry_mpi_invm(invers , p.x ,this->p);
+    gcry_mpi_set(kp.x ,invers);
+    gcry_mpi_set(kp.y ,compY(kp.x));
+    gcry_mpi_set_ui(kp.z, 1);
 
-    for(int i = (int)gcry_mpi_get_nbits(m)-1; i > -1;--i)
+    Point invP;
+    gcry_mpi_set(invP.x, kp.x);
+    gcry_mpi_set(invP.y, kp.y);
+    gcry_mpi_set(invP.z, kp.z);
+
+    Point tempP;
+    gcry_mpi_set(tempP.x, p.x);
+    gcry_mpi_set(tempP.y, p.y);
+    gcry_mpi_set(tempP.z, p.z);
+
+    Point tempP2;
+    gcry_mpi_set(tempP2.x, tempP.x);
+    gcry_mpi_set(tempP2.y, tempP.y);
+    gcry_mpi_set(tempP2.z, tempP.z);
+
+    // 13P = 8P + 4P + P = (2^3)P + (2^2)P + (2^0)P
+    int last = 0;
+    for(int i = 0; i < (int)gcry_mpi_get_nbits(m); i++)
     {
-        doubling_point(k_point, k_point);
+        //std::cout << afBelong(kp)<<"****\n";
+        //if (afBelong(kp)!=0) break;
         if (gcry_mpi_test_bit(m, i))
-            addPointsAff(k_point, k_point, temp);
-    }
-}
+        {
+            for(int j = last; j<i; ++j)
+            {
+                std::cout << afBelong(tempP)<<" DOUBLE ****\n";
 
+                gcry_mpi_set(tempP2.x, tempP.x);
+                gcry_mpi_set(tempP2.y, tempP.y);
+                gcry_mpi_set(tempP2.z, tempP.z);
+
+                doubling_point(tempP, tempP2);
+
+                std::cout << afBelong(tempP)<<" DOUBLE2 ****\n";
+            }
+            last = i;
+            if (!(gcry_mpi_cmp(kp.x, invP.x) && gcry_mpi_cmp(kp.y, invP.y)))
+            {
+                kp.x = gcry_mpi_copy(tempP.x);
+                kp.y = gcry_mpi_copy(tempP.y);
+                kp.z = gcry_mpi_copy(tempP.z);
+            }
+            else
+            {
+                std::cout << afBelong(tempP)<<" ELSE1 ****\n";
+                addPointsAff(kp, kp, tempP);
+                std::cout << afBelong(tempP)<<" ELSE2 ****\n";
+            }
+
+        }
+    }
+    std::cout << "end\n";
+}
+*/
+/*
 bool EllipticCurve::extra_check()
 {
     Point Q, Q1, Q2;
-    comp_mult_point(Q1, P, k);
-    comp_mult_point(Q2, P, l);
+    calculateMultiplePoint(Q1, P, k);
+    calculateMultiplePoint(Q2, P, l);
     addPointsAff(Q, Q1, Q2);
 
     Point R;
     gcry_mpi_t m = gcry_mpi_new(0);
     gcry_mpi_addm(m, k, l, p);
-    comp_mult_point(R, P, m);
+    calculateMultiplePoint(R, P, m);
     gcry_mpi_release(m);
 
     if (Q.x == R.x && Q.y == R.y && Q.z == R.z)
@@ -521,3 +611,4 @@ bool EllipticCurve::extra_check()
     else
         return false;
 }
+*/
